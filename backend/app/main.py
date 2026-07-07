@@ -243,6 +243,32 @@ async def get_join_link(room_id: str, base_url: str = "http://localhost:8081"):
         "join_link": QRGenerator.generate_join_link(room_id, base_url),
         "qr_code": QRGenerator.generate_qr(room_id, base_url)
     }
+
+# ==================== ВКУСЫ ПОЛЬЗОВАТЕЛЯ ====================
+
+@app.post("/api/taste/analyze")
+async def analyze_taste(request: dict):
+    """Анализ музыкальных предпочтений"""
+    genres = request.get('genres', [])
+    mood = request.get('mood', 'neutral')
+    tracks = request.get('tracks', [])
+    
+    # Анализируем
+    profile = {
+        'genres': genres,
+        'mood': mood,
+        'tracks_analyzed': len(tracks),
+        'energy': 0.6,
+        'recommendations': [
+            {'title': 'Пример трека 1', 'artist': 'Артист 1'},
+            {'title': 'Пример трека 2', 'artist': 'Артист 2'}
+        ]
+    }
+    
+    return {
+        'success': True,
+        'profile': profile
+    }
 # ==================== ЗАПУСК ====================
 
 if __name__ == "__main__":
