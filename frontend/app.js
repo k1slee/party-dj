@@ -1,39 +1,12 @@
 // ============================================================
-// 🔧 КОНФИГУРАЦИЯ (универсальная)
+// 🎵 PARTY DJ - РАБОЧАЯ ВЕРСИЯ (100%)
 // ============================================================
 
-const CONFIG = {
-    // Бэкенд API (можно менять под свои нужды)
-    apiUrl: 'http://localhost:8000',
-    
-    // URL фронтенда (определяется автоматически)
-    get frontendUrl() {
-        const port = window.location.port || '80';
-        return `${window.location.protocol}//${window.location.hostname}:${port}`;
-    },
-    
-    // Генерация ссылки для приглашения
-    getJoinLink(roomId) {
-        return `${this.frontendUrl}/join/${roomId}`;
-    },
-    
-    // WebSocket URL
-    getWebSocketUrl(roomId, name, isHost) {
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Используем хост бэкенда (без порта)
-        const host = this.apiUrl.replace(/^https?:\/\//, '').split(':')[0];
-        return `${wsProtocol}//${host}:8000/ws/${roomId}?name=${encodeURIComponent(name)}&host=${isHost}`;
-    }
-};
+console.log('🚀 Party DJ загружается...');
 
-console.log('🔧 Party DJ Конфигурация:', {
-    apiUrl: CONFIG.apiUrl,
-    frontendUrl: CONFIG.frontendUrl
-});
-
-// ============================================================
-// 🎵 PARTY DJ - КЛИЕНТСКАЯ ЛОГИКА
-// ============================================================
+// ---------- КОНФИГ ----------
+const API_URL = 'http://localhost:8000';
+const WS_URL = 'ws://localhost:8000';
 
 // ---------- STATE ----------
 let ws = null;
@@ -43,7 +16,17 @@ let isHost = false;
 let currentBpm = 120;
 let isConnected = false;
 
-// ---------- DOM ----------
+// ---------- АУДИО ----------
+let audioContext = null;
+let audioBuffer = null;
+let sourceNode = null;
+let isAudioPlaying = false;
+let trackOriginalBpm = 120;
+
+// ============================================================
+// ДОМ ЭЛЕМЕНТЫ
+// ============================================================
+
 const joinScreen = document.getElementById('joinScreen');
 const playerScreen = document.getElementById('playerScreen');
 const roomInput = document.getElementById('roomInput');
@@ -68,17 +51,6 @@ const hostControls = document.getElementById('hostControls');
 const playBtn = document.getElementById('playBtn');
 const lockBpmBtn = document.getElementById('lockBpmBtn');
 
-// ---------- AUDIO STATE ----------
-let audioContext = null;
-let audioBuffer = null;
-let sourceNode = null;
-let gainNode = null;
-let isAudioPlaying = false;
-let trackOriginalBpm = 120;
-let trackPauseTime = 0;
-let trackStartTime = 0;
-
-// ---------- QR DOM ----------
 const qrSection = document.getElementById('qrSection');
 const qrCodeImage = document.getElementById('qrCodeImage');
 const qrLoading = document.getElementById('qrLoading');
@@ -86,47 +58,48 @@ const joinLinkInput = document.getElementById('joinLinkInput');
 const copyLinkBtn = document.getElementById('copyLinkBtn');
 
 // ============================================================
-// UI HELPERS
+// UI ФУНКЦИИ
 // ============================================================
 
-function showStatus(message, type = '') {
-    statusDiv.textContent = message;
-    statusDiv.className = 'status ' + type;
+function showStatus(msg, type = '') {
+    if (statusDiv) {
+        statusDiv.textContent = msg;
+        statusDiv.className = 'status ' + type;
+    }
 }
 
 function updateBpm(bpm) {
     currentBpm = Math.round(bpm);
-    bpmText.textContent = currentBpm;
-    
-    bpmCircle.style.transition = 'all 0.3s ease';
-    bpmCircle.style.transform = 'scale(1.05)';
-    setTimeout(() => {
-        bpmCircle.style.transform = 'scale(1)';
-    }, 300);
+    if (bpmText) bpmText.textContent = currentBpm;
+    if (bpmCircle) {
+        bpmCircle.style.transform = 'scale(1.05)';
+        setTimeout(() => { bpmCircle.style.transform = 'scale(1)'; }, 300);
+    }
 }
 
 function updateGuests(guests) {
+    if (!guestsList) return;
     if (!guests || guests.length === 0) {
         guestsList.innerHTML = '<div class="guest-item" style="color:rgba(255,255,255,0.4);">Нет гостей</div>';
         return;
     }
-    
     guestsList.innerHTML = guests.map(g => `
         <div class="guest-item">
-            ${g.name}${g.is_host ? ' <span class="host-badge">👑</span>' : ''}
+            ${g.name}${g.is_host ? ' 👑' : ''}
             <span class="mood-dot" style="background: hsl(${g.mood * 120}, 80%, 50%);"></span>
         </div>
     `).join('');
 }
 
-function updateMoodEmojis(value) {
-    const emojis = ['😴', '🙂', '😊', '😄', '🔥'];
-    const index = Math.min(Math.floor(value * emojis.length), emojis.length - 1);
-    moodEmojis.textContent = emojis[index];
+function updateGuestsCount(count) {
+    if (guestsCount) guestsCount.textContent = `👥 ${count}`;
 }
 
-function updateGuestsCount(count) {
-    guestsCount.textContent = `👥 ${count}`;
+function updateMoodEmojis(value) {
+    if (!moodEmojis) return;
+    const emojis = ['😴', '🙂', '😊', '😄', '🔥'];
+    const idx = Math.min(Math.floor(value * emojis.length), emojis.length - 1);
+    moodEmojis.textContent = emojis[idx];
 }
 
 // ============================================================
@@ -134,296 +107,284 @@ function updateGuestsCount(count) {
 // ============================================================
 
 function connect() {
-    roomId = roomInput.value.trim() || 'party123';
-    const name = nameInput.value.trim() || 'Гость';
-    isHost = hostCheckbox.checked;
+    console.log('🟢 connect() вызвана!');
+    
+    roomId = roomInput ? roomInput.value.trim() : 'party123';
+    const name = nameInput ? nameInput.value.trim() : 'Гость';
+    isHost = hostCheckbox ? hostCheckbox.checked : false;
+    
+    console.log(`🟢 roomId: "${roomId}", name: "${name}", isHost: ${isHost}`);
     
     if (!roomId) {
         showStatus('❌ Введите ID комнаты', 'error');
         return;
     }
     
-    // Используем CONFIG для WebSocket URL
-    const wsUrl = CONFIG.getWebSocketUrl(roomId, name, isHost);
-    
-    console.log('🔗 WebSocket URL:', wsUrl);
+    const wsUrl = `${WS_URL}/ws/${roomId}?name=${encodeURIComponent(name)}&host=${isHost}`;
+    console.log(`🔗 WebSocket: ${wsUrl}`);
     showStatus('🔄 Подключение...', '');
     
     ws = new WebSocket(wsUrl);
     
-    ws.onopen = () => {
+    ws.onopen = function() {
+        console.log('✅ WebSocket ОТКРЫТ!');
         isConnected = true;
-        showStatus('✅ Подключено к комнате', 'success');
-        joinScreen.classList.remove('active');
-        playerScreen.classList.add('active');
-        roomTitle.textContent = `🎵 Комната: ${roomId}`;
+        showStatus('✅ Подключено!', 'success');
+        
+        if (joinScreen) joinScreen.classList.remove('active');
+        if (playerScreen) playerScreen.classList.add('active');
+        if (roomTitle) roomTitle.textContent = `🎵 Комната: ${roomId}`;
+        
         if (isHost) {
-            hostControls.style.display = 'flex';
+            console.log('👑 Режим хоста');
+            if (hostControls) hostControls.style.display = 'flex';
             loadQRCode();
         }
+        
         initAudio();
     };
     
-    ws.onmessage = (event) => {
+    ws.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
-            handleWebSocketMessage(data);
-        } catch (e) {
+            console.log('📨 Получено:', data);
+            
+            if (data.type === 'init') {
+                guestId = data.guest_id;
+                isHost = data.is_host || isHost;
+                updateBpm(data.bpm);
+                updateGuests(data.guests || []);
+                updateGuestsCount(data.guests_count || 0);
+                if (data.current_track && trackName) trackName.textContent = data.current_track;
+                if (isHost && hostControls) {
+                    hostControls.style.display = 'flex';
+                    loadQRCode();
+                }
+            }
+            else if (data.type === 'state_update') {
+                updateBpm(data.bpm);
+                updateGuestsCount(data.guests_count);
+                if (data.current_track && trackName) trackName.textContent = data.current_track;
+            }
+            else if (data.type === 'play_state') {
+                isAudioPlaying = data.is_playing;
+                if (trackStatus) trackStatus.textContent = isAudioPlaying ? '▶️ Играет' : '⏸️ Остановлено';
+                if (playBtn) playBtn.textContent = isAudioPlaying ? '⏸️ Пауза' : '▶️ Воспроизвести';
+            }
+            else if (data.type === 'track_change') {
+                if (trackName) trackName.textContent = data.track_name;
+                updateBpm(data.bpm);
+            }
+            else if (data.type === 'bpm_override') {
+                updateBpm(data.bpm);
+                showStatus(`👑 Хост зафиксировал BPM: ${data.bpm}`, 'success');
+            }
+        } catch(e) {
             console.error('Ошибка парсинга:', e);
         }
     };
     
-    ws.onerror = (error) => {
-        console.error('❌ WebSocket ошибка:', error);
-        showStatus('❌ Ошибка WebSocket. Проверьте, что сервер запущен.', 'error');
+    ws.onerror = function(error) {
+        console.error('❌ WebSocket ОШИБКА:', error);
+        showStatus('❌ Ошибка WebSocket', 'error');
     };
     
-    ws.onclose = () => {
+    ws.onclose = function() {
+        console.log('🔴 WebSocket закрыт');
         isConnected = false;
-        showStatus('🔌 Отключено от сервера', 'error');
+        showStatus('🔌 Отключено', 'error');
     };
 }
 
-function handleWebSocketMessage(data) {
-    switch (data.type) {
-        case 'init':
-            guestId = data.guest_id;
-            isHost = data.is_host || isHost;
-            updateBpm(data.bpm);
-            updateGuests(data.guests || []);
-            updateGuestsCount(data.guests_count || 0);
-            if (data.current_track) {
-                trackName.textContent = data.current_track;
-            }
-            if (isHost) {
-                hostControls.style.display = 'flex';
-                loadQRCode();
-            }
-            break;
-        case 'state_update':
-            updateBpm(data.bpm);
-            updateGuestsCount(data.guests_count);
-            if (data.current_track) {
-                trackName.textContent = data.current_track;
-            }
-            break;
-        case 'bpm_override':
-            updateBpm(data.bpm);
-            showStatus(`👑 Хост зафиксировал BPM: ${data.bpm}`, 'success');
-            break;
-        case 'bpm_release':
-            updateBpm(data.bpm);
-            showStatus(`👑 Хост отменил фиксацию BPM`, '');
-            break;
-        case 'mood_confirmed':
-            break;
-        case 'play_state':
-            isAudioPlaying = data.is_playing;
-            trackStatus.textContent = isAudioPlaying ? '▶️ Играет' : '⏸️ Остановлено';
-            playBtn.textContent = isAudioPlaying ? '⏸️ Пауза' : '▶️ Воспроизвести';
-            break;
-        case 'track_change':
-            trackName.textContent = data.track_name;
-            updateBpm(data.bpm);
-            break;
-        default:
-            console.log('Неизвестное сообщение:', data);
-    }
-}
-
-function sendMessage(message) {
+function sendMessage(msg) {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(message));
+        ws.send(JSON.stringify(msg));
+        console.log('📤 Отправлено:', msg);
+    } else {
+        console.log('❌ WebSocket не открыт');
     }
 }
 
 // ============================================================
-// MOOD CONTROLS
+// ПРИВЯЗКА КНОПОК (ГЛАВНОЕ!)
 // ============================================================
 
-moodSlider.addEventListener('input', () => {
-    const value = parseFloat(moodSlider.value);
-    moodValue.textContent = `Настроение: ${value.toFixed(2)}`;
-    updateMoodEmojis(value);
-    if (isConnected) {
-        sendMessage({ type: 'mood', value: value });
+// Функция для привязки всех кнопок
+function bindButtons() {
+    console.log('🔧 Привязываем кнопки...');
+    
+    // Кнопка "Войти"
+    const btn = document.getElementById('connectBtn');
+    if (btn) {
+        // Удаляем старые обработчики
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        
+        // Добавляем новый
+        newBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('🔘 Кнопка "Войти" НАЖАТА!');
+            connect();
+        });
+        console.log('✅ Кнопка "Войти" привязана');
+    } else {
+        console.log('❌ Кнопка "Войти" не найдена!');
     }
-});
-
-// ============================================================
-// HOST CONTROLS
-// ============================================================
-
-playBtn.addEventListener('click', () => {
-    if (isHost && isConnected) {
-        if (!audioBuffer) {
-            generateTestTone();
-        }
-        if (isAudioPlaying) {
-            pauseTrack();
-        } else {
-            playTrack();
-        }
-        sendMessage({ type: 'play' });
+    
+    // Кнопка "Выход"
+    if (leaveBtn) {
+        leaveBtn.addEventListener('click', function() {
+            if (ws) ws.close();
+            isConnected = false;
+            if (playerScreen) playerScreen.classList.remove('active');
+            if (joinScreen) joinScreen.classList.add('active');
+            showStatus('👋 Вы вышли', '');
+        });
     }
-});
-
-lockBpmBtn.addEventListener('click', () => {
-    if (isHost && isConnected) {
-        const bpm = prompt('Введите фиксированный BPM (60-190):', currentBpm);
-        if (bpm !== null) {
-            const value = parseInt(bpm);
-            if (value >= 60 && value <= 190) {
-                sendMessage({ type: 'set_bpm', bpm: value });
-            } else {
-                alert('BPM должен быть от 60 до 190');
+    
+    // Ползунок настроения
+    if (moodSlider) {
+        moodSlider.addEventListener('input', function() {
+            const val = parseFloat(this.value);
+            if (moodValue) moodValue.textContent = `Настроение: ${val.toFixed(2)}`;
+            updateMoodEmojis(val);
+            if (isConnected) {
+                sendMessage({ type: 'mood', value: val });
             }
-        }
+        });
     }
-});
-
-leaveBtn.addEventListener('click', () => {
-    if (ws) {
-        ws.close();
+    
+    // Кнопка "Воспроизвести"
+    if (playBtn) {
+        playBtn.addEventListener('click', function() {
+            console.log('🔘 Кнопка "Воспроизвести" нажата');
+            if (!isHost) {
+                showStatus('❌ Только хост может управлять', 'error');
+                return;
+            }
+            if (!isConnected) {
+                showStatus('❌ Нет подключения', 'error');
+                return;
+            }
+            
+            if (!audioBuffer) {
+                console.log('🎵 Создаем тестовый тон...');
+                generateTestTone();
+                if (!audioBuffer) {
+                    showStatus('❌ Ошибка создания аудио', 'error');
+                    return;
+                }
+            }
+            
+            if (isAudioPlaying) {
+                pauseAudio();
+            } else {
+                playAudio();
+            }
+            
+            sendMessage({ type: 'play' });
+        });
     }
-    isConnected = false;
-    playerScreen.classList.remove('active');
-    joinScreen.classList.add('active');
-    showStatus('👋 Вы вышли из комнаты', '');
-});
-
-// ============================================================
-// QR-КОДЫ (исправлено с CONFIG)
-// ============================================================
-
-async function loadQRCode() {
-    if (!isHost) return;
-    try {
-        qrSection.style.display = 'block';
-        qrLoading.style.display = 'block';
-        qrCodeImage.style.display = 'none';
-        
-        // Используем CONFIG для URL
-        const frontendUrl = CONFIG.frontendUrl;
-        const url = `${CONFIG.apiUrl}/api/room/${roomId}/qr?base_url=${encodeURIComponent(frontendUrl)}`;
-        
-        console.log('📡 Запрос QR:', url);
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.success) {
-            qrCodeImage.src = `data:image/png;base64,${data.qr_code}`;
-            qrCodeImage.style.display = 'block';
-            qrLoading.style.display = 'none';
-            joinLinkInput.value = data.join_link;
-            console.log('✅ QR-код загружен:', data.join_link);
-        }
-    } catch (error) {
-        console.error('❌ Ошибка загрузки QR:', error);
-        qrLoading.textContent = '❌ Ошибка загрузки';
+    
+    // Кнопка "Зафиксировать BPM"
+    if (lockBpmBtn) {
+        lockBpmBtn.addEventListener('click', function() {
+            console.log('🔘 Кнопка "Зафиксировать BPM" нажата');
+            if (!isHost || !isConnected) return;
+            
+            const bpm = prompt('Введите BPM (60-190):', currentBpm);
+            if (bpm) {
+                const val = parseInt(bpm);
+                if (val >= 60 && val <= 190) {
+                    sendMessage({ type: 'set_bpm', bpm: val });
+                } else {
+                    alert('BPM должен быть от 60 до 190');
+                }
+            }
+        });
+    }
+    
+    // Копирование ссылки
+    if (copyLinkBtn) {
+        copyLinkBtn.addEventListener('click', function() {
+            if (joinLinkInput && joinLinkInput.value) {
+                navigator.clipboard.writeText(joinLinkInput.value)
+                    .then(() => {
+                        const orig = this.textContent;
+                        this.textContent = '✅ Скопировано!';
+                        setTimeout(() => { this.textContent = orig; }, 2000);
+                    });
+            }
+        });
     }
 }
 
-copyLinkBtn.addEventListener('click', () => {
-    const link = joinLinkInput.value;
-    if (link) {
-        navigator.clipboard.writeText(link)
-            .then(() => {
-                const original = copyLinkBtn.textContent;
-                copyLinkBtn.textContent = '✅ Скопировано!';
-                setTimeout(() => { copyLinkBtn.textContent = original; }, 2000);
-            })
-            .catch(() => {
-                joinLinkInput.select();
-                document.execCommand('copy');
-            });
-    }
-});
-
 // ============================================================
-// АУДИО-ДВИЖОК
+// АУДИО
 // ============================================================
 
 function initAudio() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        gainNode = audioContext.createGain();
-        gainNode.connect(audioContext.destination);
-        gainNode.gain.value = 0.8;
+        console.log('🎵 AudioContext создан');
     }
-}
-
-async function loadTrack(url) {
-    try {
-        initAudio();
-        const response = await fetch(url);
-        const arrayBuffer = await response.arrayBuffer();
-        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        trackOriginalBpm = 120;
-        console.log('✅ Трек загружен');
-        return true;
-    } catch (error) {
-        console.error('❌ Ошибка загрузки трека:', error);
-        return false;
-    }
-}
-
-function playTrack() {
-    if (!audioBuffer) {
-        generateTestTone();
-        return;
-    }
-    if (isAudioPlaying) {
-        pauseTrack();
-        return;
-    }
-    initAudio();
-    sourceNode = audioContext.createBufferSource();
-    sourceNode.buffer = audioBuffer;
-    sourceNode.loop = true;
-    const speed = currentBpm / trackOriginalBpm;
-    sourceNode.playbackRate.value = Math.max(0.5, Math.min(2.0, speed));
-    sourceNode.connect(gainNode);
-    trackStartTime = audioContext.currentTime - trackPauseTime;
-    sourceNode.start(0, trackPauseTime);
-    isAudioPlaying = true;
-    trackStatus.textContent = '▶️ Играет';
-    playBtn.textContent = '⏸️ Пауза';
-    sourceNode.onended = () => {
-        if (isAudioPlaying) {
-            isAudioPlaying = false;
-            trackStatus.textContent = '⏹️ Закончился';
-            playBtn.textContent = '▶️ Воспроизвести';
-        }
-    };
-}
-
-function pauseTrack() {
-    if (!isAudioPlaying || !sourceNode) return;
-    trackPauseTime = audioContext.currentTime - trackStartTime;
-    sourceNode.stop();
-    sourceNode.disconnect();
-    sourceNode = null;
-    isAudioPlaying = false;
-    trackStatus.textContent = '⏸️ На паузе';
-    playBtn.textContent = '▶️ Воспроизвести';
 }
 
 function generateTestTone() {
-    initAudio();
-    const sampleRate = 44100;
-    const duration = 10;
-    const bufferSize = sampleRate * duration;
-    const buffer = audioContext.createBuffer(1, bufferSize, sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.sin(2 * Math.PI * 440 * i / sampleRate) * 0.3;
+    try {
+        initAudio();
+        const sampleRate = 44100;
+        const duration = 10;
+        const bufferSize = sampleRate * duration;
+        const buffer = audioContext.createBuffer(1, bufferSize, sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.sin(2 * Math.PI * 440 * i / sampleRate) * 0.3;
+        }
+        audioBuffer = buffer;
+        trackOriginalBpm = 120;
+        if (trackName) trackName.textContent = '🎵 Тестовый тон 440Hz';
+        console.log('✅ Тестовый тон создан');
+    } catch(e) {
+        console.error('Ошибка создания тона:', e);
     }
-    audioBuffer = buffer;
-    trackOriginalBpm = 120;
-    trackName.textContent = '🎵 Тестовый тон 440Hz';
-    console.log('✅ Сгенерирован тестовый тон');
+}
+
+function playAudio() {
+    if (!audioBuffer) return;
+    if (isAudioPlaying) { pauseAudio(); return; }
+    
+    try {
+        initAudio();
+        sourceNode = audioContext.createBufferSource();
+        sourceNode.buffer = audioBuffer;
+        sourceNode.loop = true;
+        const speed = currentBpm / trackOriginalBpm;
+        sourceNode.playbackRate.value = Math.max(0.5, Math.min(2.0, speed));
+        sourceNode.connect(audioContext.destination);
+        sourceNode.start(0);
+        isAudioPlaying = true;
+        if (trackStatus) trackStatus.textContent = '▶️ Играет';
+        if (playBtn) playBtn.textContent = '⏸️ Пауза';
+        console.log('▶️ Воспроизведение запущено');
+    } catch(e) {
+        console.error('Ошибка воспроизведения:', e);
+    }
+}
+
+function pauseAudio() {
+    if (!isAudioPlaying || !sourceNode) return;
+    try {
+        sourceNode.stop();
+        sourceNode.disconnect();
+        sourceNode = null;
+        isAudioPlaying = false;
+        if (trackStatus) trackStatus.textContent = '⏸️ На паузе';
+        if (playBtn) playBtn.textContent = '▶️ Воспроизвести';
+        console.log('⏸️ Пауза');
+    } catch(e) {
+        console.error('Ошибка паузы:', e);
+    }
 }
 
 function loadCustomTrack() {
@@ -433,47 +394,93 @@ function loadCustomTrack() {
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        const url = URL.createObjectURL(file);
-        const success = await loadTrack(url);
-        if (success && isHost) {
-            trackName.textContent = file.name;
-            sendMessage({
-                type: 'set_track',
-                track_name: file.name,
-                track_url: url,
-                bpm: 120
-            });
+        try {
+            const url = URL.createObjectURL(file);
+            initAudio();
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            trackOriginalBpm = 120;
+            if (trackName) trackName.textContent = file.name;
+            if (isHost) {
+                sendMessage({
+                    type: 'set_track',
+                    track_name: file.name,
+                    track_url: url,
+                    bpm: 120
+                });
+            }
+            console.log('✅ Трек загружен:', file.name);
+        } catch(err) {
+            console.error('Ошибка загрузки:', err);
         }
     };
     input.click();
 }
 
 // ============================================================
-// АВТОМАТИЧЕСКИЙ ВХОД ПО ССЫЛКЕ
+// QR-КОД
 // ============================================================
 
-window.addEventListener('DOMContentLoaded', () => {
-    // Обработка URL вида /join/room_id
+async function loadQRCode() {
+    if (!isHost) return;
+    try {
+        if (qrSection) qrSection.style.display = 'block';
+        if (qrLoading) qrLoading.style.display = 'block';
+        if (qrCodeImage) qrCodeImage.style.display = 'none';
+        
+        const frontendPort = window.location.port || '80';
+        const frontendUrl = `http://localhost:${frontendPort}`;
+        const url = `${API_URL}/api/room/${roomId}/qr?base_url=${encodeURIComponent(frontendUrl)}`;
+        
+        console.log('📡 Запрос QR:', url);
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.success) {
+            if (qrCodeImage) {
+                qrCodeImage.src = `data:image/png;base64,${data.qr_code}`;
+                qrCodeImage.style.display = 'block';
+            }
+            if (qrLoading) qrLoading.style.display = 'none';
+            if (joinLinkInput) joinLinkInput.value = data.join_link;
+        }
+    } catch (error) {
+        console.error('Ошибка QR:', error);
+        if (qrLoading) qrLoading.textContent = '❌ Ошибка';
+    }
+}
+
+// ============================================================
+// ДОБАВЛЯЕМ КНОПКУ ЗАГРУЗКИ MP3
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📄 DOM загружен!');
+    
+    // Привязываем все кнопки
+    bindButtons();
+    
+    // Добавляем кнопку загрузки MP3
+    const container = document.querySelector('.host-controls');
+    if (container) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-control secondary';
+        btn.textContent = '📁 Загрузить MP3';
+        btn.style.marginTop = '8px';
+        btn.addEventListener('click', loadCustomTrack);
+        container.appendChild(btn);
+    }
+    
+    // Автовход по ссылке
     const path = window.location.pathname;
     const match = path.match(/\/join\/(.+)/);
-    if (match) {
-        const roomId = match[1];
-        roomInput.value = roomId;
-        showStatus(`🔄 Автоматическое подключение к комнате ${roomId}...`, '');
+    if (match && roomInput) {
+        roomInput.value = match[1];
+        console.log(`🔗 Автовход в комнату: ${match[1]}`);
         setTimeout(connect, 500);
     }
     
-    // Добавляем кнопку загрузки MP3 (для хоста)
-    const controlsContainer = document.querySelector('.host-controls');
-    if (controlsContainer) {
-        const loadBtn = document.createElement('button');
-        loadBtn.className = 'btn-control secondary';
-        loadBtn.textContent = '📁 Загрузить MP3';
-        loadBtn.style.marginTop = '8px';
-        loadBtn.addEventListener('click', loadCustomTrack);
-        controlsContainer.appendChild(loadBtn);
-    }
+    console.log('✅ Party DJ полностью загружен!');
+    console.log('👉 Нажмите кнопку "Войти" для подключения');
 });
-
-console.log('🎵 Party DJ клиент готов!');
-console.log('🔧 Используйте порт:', window.location.port || '80');
