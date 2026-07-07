@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # ==================== REDIS ====================
+  redis:
+    image: redis:7.2-alpine
+    container_name: party-dj-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - party-dj-network
+
+  # ==================== POSTGRES ====================
+  postgres:
+    image: postgres:15-alpine
+    container_name: party-dj-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: party_dj
+      POSTGRES_PASSWORD: party_dj_password
+      POSTGRES_DB: party_dj
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - party-dj-network
+
+  # ==================== BACKEND ====================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: party-dj-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://party_dj:party_dj_password@postgres/party_dj
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-12345}
+      - DEBUG=${DEBUG:-true}
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./backend:/app
+      - backend_uploads:/app/uploads
+    networks:
+      - party-dj-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ==================== FRONTEND ====================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: party-dj-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - VITE_API_URL=http://backend:8000
+      - VITE_WS_URL=ws://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - party-dj-network
+
+  # ==================== NGINX (опционально) ====================
+  nginx:
+    image: nginx:alpine
+    container_name: party-dj-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - party-dj-network
+
+# ==================== VOLUMES ====================
+volumes:
+  redis_data:
+  postgres_data:
+  backend_uploads:
+
+# ==================== NETWORKS ====================
+networks:
+  party-dj-network:
+    driver: bridge

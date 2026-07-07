@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎵 Party DJ</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Экран входа -->
+        <div id="joinScreen" class="screen active">
+            <div class="container">
+                <div class="logo">🎵</div>
+                <h1>Party DJ</h1>
+                <p class="subtitle">Управляй музыкой вместе с друзьями</p>
+                
+                <div class="card">
+                    <div class="form-group">
+                        <label>ID комнаты</label>
+                        <input type="text" id="roomInput" placeholder="Например: party123" value="party123">
+                    </div>
+                    <div class="form-group">
+                        <label>Ваше имя</label>
+                        <input type="text" id="nameInput" placeholder="Как вас зовут?" value="Гость">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="hostCheckbox"> 
+                            Я хозяин вечеринки (диджей)
+                        </label>
+                    </div>
+                    <button id="connectBtn" class="btn-primary">🚀 Войти в комнату</button>
+                    <div id="status" class="status">Введите ID комнаты для подключения</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Экран плеера -->
+        <div id="playerScreen" class="screen">
+            <div class="container">
+                <div class="header">
+                    <h2 id="roomTitle">🎵 Комната: party123</h2>
+                    <div class="room-stats">
+                        <span id="guestsCount">👥 0</span>
+                        <button id="leaveBtn" class="btn-small">✕ Выйти</button>
+                    </div>
+                </div>
+
+                <!-- BPM индикатор -->
+                <div class="bpm-section">
+                    <div class="bpm-circle" id="bpmCircle">
+                        <span id="bpmText">120</span>
+                        <small>BPM</small>
+                    </div>
+                </div>
+
+                <!-- Трек -->
+                <div class="track-section" id="trackSection">
+                    <div class="track-name" id="trackName">Нет трека</div>
+                    <div class="track-status" id="trackStatus">⏸️ Остановлено</div>
+                </div>
+
+                <!-- Ползунок настроения -->
+                <div class="mood-section">
+                    <div class="mood-labels">
+                        <span>😴 Расслабон</span>
+                        <span>🔥 Бешеный движ</span>
+                    </div>
+                    <input type="range" id="moodSlider" min="0" max="1" step="0.01" value="0.5">
+                    <div id="moodValue">Настроение: 0.50</div>
+                    <div class="mood-emojis" id="moodEmojis">😐</div>
+                </div>
+
+                <!-- Кнопки управления (только для хоста) -->
+                <div id="hostControls" class="host-controls" style="display: none;">
+                    <button id="playBtn" class="btn-control">▶️ Воспроизвести</button>
+                    <button id="lockBpmBtn" class="btn-control secondary">🔒 Зафиксировать BPM</button>
+                </div>
+
+                <!-- Список гостей -->
+                <div class="guests-section">
+                    <div class="guests-title">👥 В комнате</div>
+                    <div id="guestsList" class="guests-list">
+                        <div class="guest-item">Загрузка...</div>
+                    </div>
+                </div>
+
+                <!-- QR-код (только для хоста) -->
+                <div id="qrSection" class="qr-section" style="display: none;">
+                    <div class="qr-container">
+                        <div class="qr-title">📱 Пригласи друзей</div>
+                        <div id="qrCodeContainer" class="qr-code-container">
+                            <img id="qrCodeImage" src="" alt="QR-код" style="display: none;">
+                            <div id="qrLoading" class="qr-loading">⏳ Генерация...</div>
+                        </div>
+                        <div class="qr-link">
+                            <input type="text" id="joinLinkInput" readonly>
+                            <button id="copyLinkBtn" class="btn-small">📋 Копировать</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
