@@ -12,6 +12,7 @@ class RoomManager:
     def __init__(self):
         self.rooms: Dict[str, RoomState] = {}
         self.guest_counter = 0
+        logger.info("✅ RoomManager инициализирован")
     
     def create_room(self, room_id: Optional[str] = None) -> str:
         """Создать новую комнату"""
@@ -21,18 +22,16 @@ class RoomManager:
         if room_id not in self.rooms:
             self.rooms[room_id] = RoomState(room_id=room_id)
             logger.info(f"✅ Создана комната: {room_id}")
+        else:
+            logger.info(f"ℹ️ Комната {room_id} уже существует")
         
         return room_id
     
     def generate_room_id(self) -> str:
-        """Сгенерировать уникальный ID комнаты (легко запоминаемый)"""
-        # Вариант 1: Случайные слова
-        words = ["party", "vibe", "beat", "groove", "jam", "dance", "rhythm"]
+        """Сгенерировать уникальный ID комнаты"""
         import random
+        words = ["party", "vibe", "beat", "groove", "jam", "dance", "rhythm"]
         return f"{random.choice(words)}-{random.randint(100, 999)}"
-        
-        # Вариант 2: UUID (закомментирован)
-        # return str(uuid.uuid4())[:8]
     
     def get_room(self, room_id: str) -> Optional[RoomState]:
         """Получить комнату по ID"""
@@ -41,13 +40,17 @@ class RoomManager:
     def get_or_create_room(self, room_id: str) -> RoomState:
         """Получить комнату или создать новую"""
         if room_id not in self.rooms:
-            return self.create_room(room_id)
+            logger.info(f"🆕 Комната {room_id} не найдена, создаем...")
+            self.create_room(room_id)
         return self.rooms[room_id]
     
     def add_guest(self, room_id: str, name: str, is_host: bool = False) -> Optional[Guest]:
-        """Добавить гостя в комнату"""
-        room = self.get_room(room_id)
+        """Добавить гостя в комнату (создает комнату, если её нет)"""
+        # ВАЖНО: СНАЧАЛА получаем или создаем комнату!
+        room = self.get_or_create_room(room_id)  # <-- ИСПРАВЛЕНО!
+        
         if not room:
+            logger.error(f"❌ Не удалось создать/получить комнату {room_id}")
             return None
         
         self.guest_counter += 1
@@ -61,8 +64,11 @@ class RoomManager:
         # Если это первый гость и он хост - он становится хостом
         if len(room.guests) == 1 and is_host:
             guest.is_host = True
+            logger.info(f"👑 {guest.name} стал хостом комнаты {room_id}")
         
-        logger.info(f"👤 Гость '{guest.name}' вошел в комнату {room_id}")
+        logger.info(f"👤 Гость '{guest.name}' (id: {guest.id}) вошел в комнату {room_id}")
+        logger.info(f"📊 В комнате {room_id} теперь {len(room.guests)} гостей")
+        
         return guest
     
     def remove_guest(self, room_id: str, guest_id: str):
@@ -87,21 +93,17 @@ class RoomManager:
         if not room:
             return None
         
-        # Находим гостя
         guest = next((g for g in room.guests if g.id == guest_id), None)
         if not guest:
             return None
         
-        # Обновляем настроение
-        guest.mood = max(0, min(1, mood))  # Ограничиваем 0-1
+        guest.mood = max(0, min(1, mood))
         guest.last_active = datetime.now()
         
-        # Сохраняем в историю
         room.mood_history.append(guest.mood)
         if len(room.mood_history) > 50:
             room.mood_history.pop(0)
         
-        # Вычисляем новый BPM
         new_bpm = room.calculate_bpm()
         room.current_bpm = new_bpm
         

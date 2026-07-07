@@ -212,20 +212,26 @@ async def set_track(room_id: str, track_name: str, track_url: str = "", bpm: int
 # ==================== QR-КОДЫ ====================
 
 @app.get("/api/room/{room_id}/qr")
-async def get_room_qr(room_id: str, base_url: str = "http://localhost:8080"):
+async def get_room_qr(room_id: str, base_url: str = "http://localhost:8081"):
     """Получить QR-код для комнаты"""
     room = room_manager.get_room(room_id)
     if not room:
         raise HTTPException(status_code=404, detail="Комната не найдена")
     
+    # Используем функцию get_qr_data из qr_generator
     qr_data = get_qr_data(room_id, base_url)
+    
+    # Проверяем, что QR-код сгенерировался
+    if not qr_data.get("qr_code"):
+        raise HTTPException(status_code=500, detail="Ошибка генерации QR-кода")
+    
     return {
         "success": True,
         **qr_data
     }
 
 @app.get("/api/room/{room_id}/join-link")
-async def get_join_link(room_id: str, base_url: str = "http://localhost:8080"):
+async def get_join_link(room_id: str, base_url: str = "http://localhost:8081"):
     """Получить ссылку для входа в комнату"""
     room = room_manager.get_room(room_id)
     if not room:
